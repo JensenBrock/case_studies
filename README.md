@@ -1,2 +1,3 @@
 # case_studies
-Interview Case Studies
+This repo is to track progress for Case Studies as part of the interview
+process.
