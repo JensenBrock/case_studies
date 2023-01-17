@@ -1,0 +1,291 @@
+---
+title: "Georgia Pacific Case Study"
+author: "Jensen brock"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup-libraries-data, include=FALSE}
+# knitr::opts_chunk$set(message=FALSE, warning=FALSE) 
+# , message=FALSE, warning=FALSE
+library(tidyverse)
+library(broom)
+library(scales)
+library(modelr)
+library(tidyquant)
+library(forcats) 
+library(gghalves)
+library(lubridate)
+library(scales)
+
+dataset_1 <- read_csv("data/dataset_1")
+dataset_2 <- read_csv("data/dataset_2")
+```
+
+
+```{r data-cleaning, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+data1 <- dataset_1 %>% 
+        rename(date = Date
+             , price = `SRP ($)`
+             , volume = `Volume (Units)`
+             , revenue = `Sales ($)`
+             )
+
+data2 <- dataset_2 %>% 
+  rename(date = Date
+       , price = `SRP ($)`
+       , volume = `Volume (Units)`
+       , revenue = `Sales ($)`
+       , num_stores = `No of Stores`
+       , shelf_space_pct = `Additional Shelf Space (%)`
+       , is_advertisement = `Any Store Advertisement`) %>% 
+  mutate(is_advertisement = if_else(is_advertisement == "YES", TRUE, FALSE)
+       , quarter = quarter(date))
+```
+
+# Case 1
+
+## Overview
+```{r}
+data1 %>% 
+  summarise(
+            min_volume = scales::comma(min(volume)) 
+          , mean_volume = scales::comma(mean(volume))
+          , max_volume = scales::comma(max(volume))
+          , min_price = scales::dollar(min(price)) 
+          , mean_price = scales::dollar(mean(price))
+          , max_price = scales::dollar(round(max(price), digits = 2))
+          , min_rev = scales::dollar(min(revenue))
+          , mean_rev = scales::dollar(mean(revenue))
+          , max_rev = scales::dollar(max(revenue))
+          ) 
+# %>% 
+#   pivot_longer(cols = everything()
+#               , names_to = "metric"
+#               , values_to = "value")
+```
+
+
+### Volume Distributioin
+```{r}
+weekly_sales_hist <- 
+  data1 %>% 
+  ggplot(mapping = aes(volume)) +
+  # geom_density()
+  geom_histogram(color = "white"
+                , binwidth = 10000
+                , boundary = 150000
+                , fill = "#0067a6") +
+  xlab("Volume (Units)") +
+  ylab(element_blank()) +
+  labs(title = "Weekly Sales Volume Distribution") 
+
+ggsave("output/weekly_sales_hist.png"
+     , plot = weekly_sales_hist
+     , width = 7
+     , height = 5
+     )
+```
+### Volume Distribution as a Function of price
+```{r}
+vol_price_raincloud <- 
+data1 %>% 
+  mutate(fct_price = factor(price)) %>% 
+  ggplot(mapping = aes(x = fct_price, y = volume)) +
+  geom_half_boxplot(side = "l") +
+  geom_half_point(side = "l", aes(color = fct_price)) +
+  scale_color_manual(values = c("#0464a4", "#b7d4e6", "#5f9fc8", "#7cb4d4")) +
+  geom_half_violin(side = "r", aes(fill = fct_price)) +
+  scale_fill_manual(values = c("#0464a4", "#b7d4e6", "#5f9fc8", "#7cb4d4")) +
+  scale_x_discrete(breaks = c("4.96", "4.98",
+                              "4.99", "5")
+                 , labels = c("$4.96", "$4.98",
+                              "$4.99", "$5.00")) +
+  xlab(label = "Price") +
+  ylab(label = "Volume") +
+  labs(title = "Volume Distribution by Price") +
+  theme(legend.position = "none") +
+  coord_flip()
+
+ggsave("output/vol_price_raincloud.png"
+     , plot = vol_price_raincloud
+     , width = 7
+     , height = 5
+     )
+  
+```
+### Hypothesis testing
+```{r}
+t.test(
+    data1 %>% filter(price == 4.99) %>% select(volume)
+  , data1 %>% filter(price != 4.99) %>% select(volume)
+  , alternative = "two.sided"
+  ) %>%  tidy()
+```
+
+
+### Price Distribution
+```{r}
+price_dist <- 
+data1 %>% 
+  ggplot(mapping = aes(price)) +
+  geom_histogram(bins = 5
+               , color = "white"
+               , fill = "#0067a6") +
+  scale_x_continuous(labels = label_dollar()) +
+  xlab("Price") +
+  ylab(element_blank()) +
+  labs(title = "Price Distribution") 
+
+ggsave("output/price_dist.png"
+     , plot = price_dist
+     , width = 7
+     , height = 5
+     )
+```
+
+### Volume Over Time
+```{r}
+data1 %>% 
+  ggplot(mapping = aes(x = date, y = volume)) +
+  geom_smooth(method = "lm") + #"gam", formula = y ~ s(x, bs = "cs")) +
+  geom_point(aes(color = factor(price))) +
+  scale_color_manual(values = c("#ff6078", "#ae61b7", "#0067A6", "#ffa600")
+                    , breaks = c("4.96", "4.98",
+                                 "4.99", "5")
+                    , labels = c("$4.96", "$4.98",
+                                 "$4.99", "$5.00")
+                    , name = "Price") +
+  scale_x_datetime(date_breaks = "3 months", date_labels = "%m/%y") +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  labs(title = "Sales Volume Over Time") +
+  xlab("Date") +
+  ylab("Volume (Units)") +
+  theme(legend.position = "bottom")
+
+
+
+# scale_color_discrete(breaks = c("4.96", "4.98",
+  #                             "4.99", "5")
+  #                , labels = c("$4.96", "$4.98",
+  #                             "$4.99", "$5.00")
+  #                , name = "Price") +
+```
+
+
+### Price Over Time
+```{r}
+data1 %>% 
+  ggplot(mapping = aes(x = date, y = price)) +
+  geom_line() +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+  scale_x_datetime(date_breaks = "3 months", date_labels = "%m/%y")
+```
+
+
+
+## Modeling
+```{r model}
+# elasticity_model <- lm(log(volume) ~ log(price), data = data1)
+# summary(elasticity_model)
+
+elasticity_model2 <- lm((volume) ~ (price) + date, data = data1)
+summary(elasticity_model2)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Case 1
+
+## Data Overview
+```{r}
+data2 %>% 
+  select(2:7) %>% 
+  cor()
+```
+
+```{r}
+data2 %>% 
+  ggplot(mapping = aes(x = shelf_space_pct
+                     , y = revenue
+                     , color = is_advertisement)) +
+  geom_point()
+```
+
+```{r}
+case_2_model <- lm(volume ~ price + num_stores + date
+                           + shelf_space_pct + is_advertisement
+                  , data = data2)
+summary(case_2_model)
+
+```
+
+```{r}
+case_2_model2 <- lm(volume ~ price + num_stores + shelf_space_pct 
+                  + is_advertisement + factor(quarter)
+                  , data = data2)
+summary(case_2_model2)
+```
+
+
+
+
+
+
+
+# Unused Chunks
+```{r predict-rev-model}
+predicted_volume %>% 
+  mutate(predicted_revenue = predicted_volume*price)
+
+```
+
+```{r volume_model}
+predicted_vol_model <- lm(log(volume) ~ log(price), data = data1)
+
+predicted_volume <- data1 %>% 
+  add_predictions(model = predicted_vol_model, var = "predicted_volume") %>% 
+  mutate(log_price = log(price), log_volume = log(volume))
+```
+
+```{r pred-vol-plot}
+  ggplot(data = predicted_volume, 
+         mapping = aes(x = log_price, y = predicted_volume)) +
+  geom_point(mapping = aes(x = log_price, y = log_volume)) +
+  geom_smooth(mapping = aes(x = log_price, y = log_volume), method = "lm") +
+  coord_flip()
+```
+
+```{r}
+data1 %>% 
+  ggplot(mapping = aes(x = volume, y = price)) +
+  geom_point() +
+  geom_smooth(method = lm) 
+
+
+log_price_model <- lm(log(price) ~ log(volume), data = data1)
+tidy(log_price_model)
+
+
+```
+
+```{r case-2-plot}
+data2 %>% 
+  group_by(num_stores) %>% 
+  summarise(avg_rev = mean(revenue)) %>% 
+  mutate(num_stores = factor(num_stores)) %>% 
+  ggplot(mapping = aes(x = num_stores
+                     , y = avg_rev)) +
+  geom_col() +
+  coord_flip()
+```
