@@ -7,7 +7,8 @@ output: html_document
 
 ```{r setup-libraries-data, include=FALSE}
 knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-# , message=FALSE, warning=FALSE
+
+# Load necessary Libraries
 library(tidyverse)
 library(broom)
 library(scales)
@@ -18,13 +19,16 @@ library(gghalves)
 library(lubridate)
 library(scales)
 library(car)
+library(psych)
 
+# Load Datasets
 dataset_1 <- read_csv("data/dataset_1")
 dataset_2 <- read_csv("data/dataset_2")
 ```
 
 
 ```{r data-cleaning, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# change column names to something better suited to coding
 data1 <- dataset_1 %>% 
         rename(date = Date
              , price = `SRP ($)`
@@ -32,6 +36,7 @@ data1 <- dataset_1 %>%
              , revenue = `Sales ($)`
              )
 
+# change column names to something better suited to coding
 data2 <- dataset_2 %>% 
   rename(date = Date
        , price = `SRP ($)`
@@ -48,26 +53,16 @@ data2 <- dataset_2 %>%
 
 ## Overview
 ```{r}
+# quick summary statistics table
 data1 %>% 
-  summarise(
-            min_volume = scales::comma(min(volume)) 
-          , mean_volume = scales::comma(mean(volume))
-          , max_volume = scales::comma(max(volume))
-          , min_price = scales::dollar(min(price)) 
-          , mean_price = scales::dollar(mean(price))
-          , max_price = scales::dollar(round(max(price), digits = 2))
-          , min_rev = scales::dollar(min(revenue))
-          , mean_rev = scales::dollar(mean(revenue))
-          , max_rev = scales::dollar(max(revenue))
-          ) 
-# %>% 
-#   pivot_longer(cols = everything()
-#               , names_to = "metric"
-#               , values_to = "value")
+  describe()
+
 ```
 
 ### Volume Distributioin
 ```{r}
+# create histogram of sales volume to show the distribution of sales
+# across the dataset
 weekly_sales_hist <- 
   data1 %>% 
   ggplot(mapping = aes(volume)) +
@@ -80,6 +75,7 @@ weekly_sales_hist <-
   ylab(element_blank()) +
   labs(title = "Weekly Sales Volume Distribution") 
 
+# save plot as .png
 ggsave("output/weekly_sales_hist.png"
      , plot = weekly_sales_hist
      , width = 7
@@ -88,6 +84,10 @@ ggsave("output/weekly_sales_hist.png"
 ```
 ### Volume Distribution as a Function of price
 ```{r}
+# show distribution of sales volume for each price point
+# the rain cloud plot shows the shape of the distribution 
+# and also demonstrates that a t-test would likely 
+# fail to reject the null hypothesis
 vol_price_raincloud <- 
 data1 %>% 
   mutate(fct_price = factor(price)) %>% 
@@ -107,6 +107,7 @@ data1 %>%
   theme(legend.position = "none") +
   coord_flip()
 
+# save plot as .png
 ggsave("output/vol_price_raincloud.png"
      , plot = vol_price_raincloud
      , width = 7
@@ -115,7 +116,9 @@ ggsave("output/vol_price_raincloud.png"
   
 ```
 ### Hypothesis testing
-```{r}
+```{r t-test-price-volume}
+# t-test statistically showing what is visually shown in the previous chunk
+# there are no statistical differences in sales volume
 t.test(
     data1 %>% filter(price == 4.99) %>% select(volume)
   , data1 %>% filter(price != 4.99) %>% select(volume)
@@ -123,7 +126,8 @@ t.test(
   ) #%>%  tidy()
 ```
 ### Price Distribution
-```{r}
+```{r price-histogram}
+# histogram to show the count of records at each price point
 price_dist <- 
 data1 %>% 
   ggplot(mapping = aes(price)) +
@@ -135,6 +139,7 @@ data1 %>%
   ylab(element_blank()) +
   labs(title = "Price Distribution") 
 
+# save plot as .png
 ggsave("output/price_dist.png"
      , plot = price_dist
      , width = 7
@@ -143,6 +148,8 @@ ggsave("output/price_dist.png"
 ```
 ### Volume Over Time
 ```{r}
+# plot sales volume over time, each color represents a different price point
+# the line shows the relationship between sales volume and time
 vol_time <- 
 data1 %>% 
   ggplot(mapping = aes(x = date, y = volume)) +
@@ -161,32 +168,29 @@ data1 %>%
   ylab("Volume (Units)") +
   theme(legend.position = "bottom")
 
-
+# save plot as .png
 ggsave("output/vol_time.png"
      , plot = vol_time
      , width = 7
      , height = 5
      )
 
-# scale_color_discrete(breaks = c("4.96", "4.98",
-  #                             "4.99", "5")
-  #                , labels = c("$4.96", "$4.98",
-  #                             "$4.99", "$5.00")
-  #                , name = "Price") +
 ```
 ## Modeling
 ```{r model}
-# elasticity_model <- lm(log(volume) ~ log(price), data = data1)
-# summary(elasticity_model)
-
-elasticity_model2 <- lm((volume) ~ (price) + date, data = data1)
+# Standard Level OLS 
+elasticity_model2 <- lm(volume ~ price + date, data = data1)
 summary(elasticity_model2)
 
 ```
 
 ```{r volume-model}
+# elasticity model
 predicted_vol_model <- lm(log(volume) ~ log(price), data = data1)
 
+# create table with predicted volume based on price.
+# include Potential promotional price as well as price points between 
+# lowest price in the data and promotional price
 predicted_volume <- 
 data1 %>% 
   group_by(price) %>% 
@@ -204,12 +208,12 @@ data1 %>%
 ```
 
 ```{r pred-vol-plot}
+# simple line plot showing the statistically insignificant "predicted" values
+# plot actual data on top for context
 pred_plot <- 
   ggplot(data = predicted_volume, 
          mapping = aes(x = pred_vol, y = price)) +
   geom_line(color = "red") +
-  # geom_ribbon(aes(xmin = pred_lower, xmax = pred_upper)
-  #             , color = "#b7d4e6", alpha = 0.25) +
   geom_point(data = data1, mapping = aes(x = volume, y = price)
              , color = "#0067A6", size = 0.5, alpha = 0.5) +
   scale_y_continuous(name = "Price", n.breaks = 10
@@ -219,6 +223,7 @@ pred_plot <-
                      , n.breaks = 7) +
   labs(title = "Predicted Volume")
 
+# save plot as .png
 ggsave("output/pred_plot.png"
      , plot = pred_plot
      , width = 7
@@ -227,6 +232,10 @@ ggsave("output/pred_plot.png"
 ```
 
 ```{r pred-plot-conf}
+# simple line plot showing the statistically insignificant "predicted" values
+# plot actual data on top for context
+# additional context added, confidence interval. this show that the promo price
+# is too far away from the data to make a valid prediction.
 pred_plot_conf <- 
 ggplot(data = predicted_volume, 
          mapping = aes(x = pred_vol, y = price)) +
@@ -242,6 +251,7 @@ ggplot(data = predicted_volume,
                      , n.breaks = 10) +
   labs(title = "Predicted Volume with Confidence Interval")
 
+# save plot as .png
 ggsave("output/pred_plot_conf.png"
      , plot = pred_plot_conf
      , width = 7
@@ -251,17 +261,11 @@ ggsave("output/pred_plot_conf.png"
 
 
 
-
-
-
-
-
-
-
 # Case 2
 
 ## Data Overview
-```{r}
+```{r correlation-table}
+# create cor table
 data2 %>% 
   select(2:7) %>% 
   cor()
@@ -276,6 +280,8 @@ t.test(
 ```
 
 ```{r rev-shelf}
+# plot the relationship between revenue and additional shelf space
+# additionally, color points by advertisement. which is a significant predictior
 rev_shelf <- 
 data2 %>% 
   ggplot(mapping = aes(x = shelf_space_pct
@@ -297,7 +303,7 @@ data2 %>%
   theme(legend.position = "bottom")
 
 
-
+# save plot as .png
 ggsave("output/rev_shelf.png"
      , plot = rev_shelf
      , width = 7
@@ -306,10 +312,14 @@ ggsave("output/rev_shelf.png"
 ```
 
 ```{r case-2-model}
+# multivariate OLS regression
 case_2_model <- lm(log(volume) ~ log(price) + num_stores + date
                            + shelf_space_pct + is_advertisement
                   , data = data2) 
-summary(case_2_model)
+# summary(case_2_model) # results table of regression
+
+# create fitted table with predicted values 
+# this is done in two stages. This is stage 1, setting up the table
 case_2_pred <-
 data2 %>% 
   group_by(price) %>% 
@@ -326,6 +336,7 @@ data2 %>%
    , is_advertisement = TRUE) %>% 
   arrange(price)
 
+# Stage 1 fitted table. adding predictions to the table.
 case_2_pred <- case_2_pred %>% 
   bind_cols(predict(case_2_model, case_2_pred
                     , se.fit=TRUE, interval="confidence")$fit) %>% 
@@ -334,6 +345,8 @@ case_2_pred <- case_2_pred %>%
        , pred_upper = exp(upr)
        , pred_rev = pred_vol*price)
 
+# showing predicted values at $4.25
+# not significant, but providing for posterity 
 case_2_pred %>% 
   filter(price == 4.25) %>% 
   select(1, 6:12) 
@@ -341,6 +354,10 @@ case_2_pred %>%
 ```
 
 ```{r case-2-model-plot}
+# plotting the multivariate model. This is done by using the mean value for all
+# the other covariates, and only changing price (aka: ceteris paribus) 
+# interesting note, the sign for price flips to positive. Which is why there is
+# and upward sloping demand curve (which makes no sense)
 ggplot(case_2_pred, mapping = aes(x = pred_vol, y = price)) +
   geom_line() +
   geom_smooth(data = data2, mapping = aes(x = volume, y = price))
@@ -348,8 +365,11 @@ ggplot(case_2_pred, mapping = aes(x = pred_vol, y = price)) +
 ```
 
 ```{r case-2-model2, eval=FALSE}
+# this model drops date and is_advertisement. this simplified
+# model retains the negative coefficient on price, but it is still 
+# statistically insignificant. Therefore, this model is not included in the
+# presentation.
 case_2_model2 <- lm(log(volume) ~ log(price) + num_stores + shelf_space_pct 
-                  # + is_advertisement
                   , data = data2)
 summary(case_2_model2)
 ```
@@ -359,6 +379,9 @@ summary(case_2_model2)
 
 
 # Unused Chunks
+These are chunks of code that ended up not being used in the final presentation.
+They include early ideas/tests or broken code. The chunk option as been set to 
+eval=FALSE to ensure they do not run if this file is knitted.
 ```{r predict-rev-model, eval=FALSE}
 predicted_volume %>% 
   mutate(predicted_revenue = predicted_volume*log(price))
