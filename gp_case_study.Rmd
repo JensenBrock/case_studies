@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup-libraries-data, include=FALSE}
-# knitr::opts_chunk$set(message=FALSE, warning=FALSE) 
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
 # , message=FALSE, warning=FALSE
 library(tidyverse)
 library(broom)
@@ -17,6 +17,7 @@ library(forcats)
 library(gghalves)
 library(lubridate)
 library(scales)
+library(car)
 
 dataset_1 <- read_csv("data/dataset_1")
 dataset_2 <- read_csv("data/dataset_2")
@@ -64,7 +65,6 @@ data1 %>%
 #               , names_to = "metric"
 #               , values_to = "value")
 ```
-
 
 ### Volume Distributioin
 ```{r}
@@ -120,10 +120,8 @@ t.test(
     data1 %>% filter(price == 4.99) %>% select(volume)
   , data1 %>% filter(price != 4.99) %>% select(volume)
   , alternative = "two.sided"
-  ) %>%  tidy()
+  ) #%>%  tidy()
 ```
-
-
 ### Price Distribution
 ```{r}
 price_dist <- 
@@ -143,9 +141,9 @@ ggsave("output/price_dist.png"
      , height = 5
      )
 ```
-
 ### Volume Over Time
 ```{r}
+vol_time <- 
 data1 %>% 
   ggplot(mapping = aes(x = date, y = volume)) +
   geom_smooth(method = "lm") + #"gam", formula = y ~ s(x, bs = "cs")) +
@@ -164,6 +162,11 @@ data1 %>%
   theme(legend.position = "bottom")
 
 
+ggsave("output/vol_time.png"
+     , plot = vol_time
+     , width = 7
+     , height = 5
+     )
 
 # scale_color_discrete(breaks = c("4.96", "4.98",
   #                             "4.99", "5")
@@ -171,19 +174,6 @@ data1 %>%
   #                             "$4.99", "$5.00")
   #                , name = "Price") +
 ```
-
-
-### Price Over Time
-```{r}
-data1 %>% 
-  ggplot(mapping = aes(x = date, y = price)) +
-  geom_line() +
-  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
-  scale_x_datetime(date_breaks = "3 months", date_labels = "%m/%y")
-```
-
-
-
 ## Modeling
 ```{r model}
 # elasticity_model <- lm(log(volume) ~ log(price), data = data1)
@@ -194,6 +184,70 @@ summary(elasticity_model2)
 
 ```
 
+```{r volume-model}
+predicted_vol_model <- lm(log(volume) ~ log(price), data = data1)
+
+predicted_volume <- 
+data1 %>% 
+  group_by(price) %>% 
+  summarise(volume = max(volume)) %>% 
+  bind_rows(tibble(price = c(4.25, 4.5, 4.75), volume = NULL)) %>% 
+  arrange(price) %>% 
+  bind_cols(predict(predicted_vol_model, predicted_volume
+                    , se.fit=TRUE, interval="confidence")$fit) %>% 
+  mutate(pred_vol = exp(fit)
+       , pred_lower = exp(lwr)
+       , pred_upper = exp(upr)
+       , pred_rev = pred_vol*price
+       , not_in_model = if_else(is.na(volume), TRUE, FALSE))
+  # mutate(log_price = log(price), log_volume = log(volume))
+```
+
+```{r pred-vol-plot}
+pred_plot <- 
+  ggplot(data = predicted_volume, 
+         mapping = aes(x = pred_vol, y = price)) +
+  geom_line(color = "red") +
+  # geom_ribbon(aes(xmin = pred_lower, xmax = pred_upper)
+  #             , color = "#b7d4e6", alpha = 0.25) +
+  geom_point(data = data1, mapping = aes(x = volume, y = price)
+             , color = "#0067A6", size = 0.5, alpha = 0.5) +
+  scale_y_continuous(name = "Price", n.breaks = 10
+                     , labels = scales::label_dollar()) +
+  scale_x_continuous(name = "Volume (Units)"
+                     , labels = label_number(scale_cut = cut_short_scale())
+                     , n.breaks = 7) +
+  labs(title = "Predicted Volume")
+
+ggsave("output/pred_plot.png"
+     , plot = pred_plot
+     , width = 7
+     , height = 5
+     )
+```
+
+```{r pred-plot-conf}
+pred_plot_conf <- 
+ggplot(data = predicted_volume, 
+         mapping = aes(x = pred_vol, y = price)) +
+  geom_line(color = "red") +
+  geom_ribbon(aes(xmin = pred_lower, xmax = pred_upper)
+              , alpha = 0.25) +
+  geom_point(data = data1, mapping = aes(x = volume, y = price)
+             , color = "#0067A6", size = 0.5, alpha = 0.5) +
+  scale_y_continuous(name = "Price", n.breaks = 10
+                     , labels = scales::label_dollar()) +
+  scale_x_continuous(name = "Volume (Units)"
+                     , labels = label_number(scale_cut = cut_short_scale())
+                     , n.breaks = 10) +
+  labs(title = "Predicted Volume with Confidence Interval")
+
+ggsave("output/pred_plot_conf.png"
+     , plot = pred_plot_conf
+     , width = 7
+     , height = 5
+     )
+```
 
 
 
@@ -204,8 +258,7 @@ summary(elasticity_model2)
 
 
 
-
-# Case 1
+# Case 2
 
 ## Data Overview
 ```{r}
@@ -214,25 +267,89 @@ data2 %>%
   cor()
 ```
 
-```{r}
+```{r advertisement-revenue-ttest}
+t.test(
+    data2 %>% filter(is_advertisement == TRUE) %>% select(revenue)
+  , data2 %>% filter(is_advertisement == FALSE) %>% select(revenue)
+  , alternative = "two.sided"
+  )
+```
+
+```{r rev-shelf}
+rev_shelf <- 
 data2 %>% 
   ggplot(mapping = aes(x = shelf_space_pct
                      , y = revenue
                      , color = is_advertisement)) +
-  geom_point()
+  scale_color_manual(values = c("#0464a4", "#ff6078")
+                   , name = "Any Store Advertisement"
+                   , labels = c("No", "Yes")) + # "#5f9fc8" "#7cb4d4"
+  geom_smooth(method = "lm") +
+  geom_point() +
+  scale_x_continuous(name = "Additional Shelf Space (%)"
+                   , labels = label_percent(scale = 1)
+                   , n.breaks = 5) +
+  scale_y_continuous(name = "Revenue"
+                   , labels = label_dollar(scale = 0.000001
+                                         , suffix = "M")) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  labs(title = "Revenue And Additional Shelf Space") +
+  theme(legend.position = "bottom")
+
+
+
+ggsave("output/rev_shelf.png"
+     , plot = rev_shelf
+     , width = 7
+     , height = 5
+     )
 ```
 
-```{r}
-case_2_model <- lm(volume ~ price + num_stores + date
+```{r case-2-model}
+case_2_model <- lm(log(volume) ~ log(price) + num_stores + date
                            + shelf_space_pct + is_advertisement
-                  , data = data2)
+                  , data = data2) 
 summary(case_2_model)
+case_2_pred <-
+data2 %>% 
+  group_by(price) %>% 
+  summarise(
+    num_stores = mean(num_stores)
+  , date = max(date)
+  , shelf_space_pct = mean(shelf_space_pct)) %>% 
+  bind_rows(tibble(price = c(4.25, 4.5, 4.75), volume = NULL)) %>% 
+  mutate(
+     num_stores = if_else(is.na(num_stores), 1000.0000, num_stores)
+   , date = if_else(is.na(date), ymd("2016-12-18"), ymd(date))
+   , shelf_space_pct = if_else(is.na(shelf_space_pct)
+                             , 23.33333, shelf_space_pct)
+   , is_advertisement = TRUE) %>% 
+  arrange(price)
+
+case_2_pred <- case_2_pred %>% 
+  bind_cols(predict(case_2_model, case_2_pred
+                    , se.fit=TRUE, interval="confidence")$fit) %>% 
+  mutate(pred_vol = exp(fit)
+       , pred_lower = exp(lwr)
+       , pred_upper = exp(upr)
+       , pred_rev = pred_vol*price)
+
+case_2_pred %>% 
+  filter(price == 4.25) %>% 
+  select(1, 6:12) 
+# predicted volume and revenue if price $4.25 *Not Statistically Significant
+```
+
+```{r case-2-model-plot}
+ggplot(case_2_pred, mapping = aes(x = pred_vol, y = price)) +
+  geom_line() +
+  geom_smooth(data = data2, mapping = aes(x = volume, y = price))
 
 ```
 
-```{r}
-case_2_model2 <- lm(volume ~ price + num_stores + shelf_space_pct 
-                  + is_advertisement + factor(quarter)
+```{r case-2-model2, eval=FALSE}
+case_2_model2 <- lm(log(volume) ~ log(price) + num_stores + shelf_space_pct 
+                  # + is_advertisement
                   , data = data2)
 summary(case_2_model2)
 ```
@@ -241,45 +358,40 @@ summary(case_2_model2)
 
 
 
-
-
 # Unused Chunks
-```{r predict-rev-model}
+```{r predict-rev-model, eval=FALSE}
 predicted_volume %>% 
-  mutate(predicted_revenue = predicted_volume*price)
+  mutate(predicted_revenue = predicted_volume*log(price))
 
 ```
+```{r pred-price-model, eval=FALSE}
+log_price_model <- lm(log(price) ~ log(volume), data = data1)
+summary(log_price_model)
 
-```{r volume_model}
-predicted_vol_model <- lm(log(volume) ~ log(price), data = data1)
-
-predicted_volume <- data1 %>% 
-  add_predictions(model = predicted_vol_model, var = "predicted_volume") %>% 
-  mutate(log_price = log(price), log_volume = log(volume))
+data1 %>% 
+  group_by(price) %>% 
+  summarise(volume = max(volume)) %>% 
+  bind_rows(tibble(price = 4.25, volume = NULL)) %>% 
+  add_predictions(log_price_model) %>% 
+  mutate(pred = if_else(is.na(pred),log(4.25), pred)) %>% 
+  mutate(volume = if_else(is.na(volume)
+                        , exp((pred - log_price_model$coefficients[1])
+                          /log_price_model$coefficients[2])
+                          , volume)
+         ) %>% 
+  ggplot(aes(x = volume, y = price)) +
+  geom_line() +
+  geom_point(data = data1, mapping =  aes(x = volume, y = price)) 
 ```
-
-```{r pred-vol-plot}
-  ggplot(data = predicted_volume, 
-         mapping = aes(x = log_price, y = predicted_volume)) +
-  geom_point(mapping = aes(x = log_price, y = log_volume)) +
-  geom_smooth(mapping = aes(x = log_price, y = log_volume), method = "lm") +
-  coord_flip()
-```
-
-```{r}
+```{r pred-price-plot, eval=FALSE}
 data1 %>% 
   ggplot(mapping = aes(x = volume, y = price)) +
   geom_point() +
   geom_smooth(method = lm) 
 
 
-log_price_model <- lm(log(price) ~ log(volume), data = data1)
-tidy(log_price_model)
-
-
 ```
-
-```{r case-2-plot}
+```{r case-2-plot, eval=FALSE}
 data2 %>% 
   group_by(num_stores) %>% 
   summarise(avg_rev = mean(revenue)) %>% 
@@ -288,4 +400,29 @@ data2 %>%
                      , y = avg_rev)) +
   geom_col() +
   coord_flip()
+```
+```{r price-over-time, eval=FALSE}
+data1 %>% 
+  ggplot(mapping = aes(x = date, y = price)) +
+  geom_line() +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs")) +
+  scale_x_datetime(date_breaks = "3 months", date_labels = "%m/%y")
+```
+```{r num-stores-histogram, eval=FALSE}
+data2 %>% 
+  ggplot(mapping = aes(num_stores)) +
+  geom_histogram(bins = 6, boundary = 1000, color = "white")
+```
+```{r case-2-model2, eval=FALSE}
+case_2_model2 <- lm(volume ~ price + num_stores + shelf_space_pct 
+                  + is_advertisement + factor(quarter)
+                  , data = data2)
+summary(case_2_model2)
+```
+```{r case-2-model3, eval=FALSE}
+case_2_model3 <- lm(volume ~ price + num_stores + date
+                           + shelf_space_pct + is_advertisement
+                           + I(price^2)
+                  , data = data2)
+summary(case_2_model3)
 ```
